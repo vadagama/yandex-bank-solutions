@@ -1,0 +1,108 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+'------------------------
+' Участники
+'------------------------
+Person(customer, "Клиент банка", "Физическое лицо")
+Person(boDeposits, "Менеджер бэк-офиса", "Обрабатывает заявки на депозиты")
+Person(ccOperator, "Оператор кол-центра", "Обрабатывает заявки с сайта")
+
+'------------------------
+' Система: Сайт банка
+'------------------------
+System_Boundary(siteSystem, "Сайт банка") {
+  Container(siteWeb, "Веб-приложение", "React/Angular", "Отображение депозитов, форма заявки")
+  Container(siteApi, "API Gateway", "Nginx/API Gateway", "Маршрутизация запросов, SSL/TLS")
+}
+
+'------------------------
+' Система: Интернет-банк
+'------------------------
+System_Boundary(ibSystem, "Интернет-банк") {
+  Container(ibWeb, "Веб-приложение", "React/Angular", "Отображение депозитов, персонализированные ставки, форма заявки")
+  Container(ibApi, "API Gateway", "Nginx/API Gateway", "Маршрутизация, SSL/TLS, аутентификация")
+  Container(depositService, "Сервис депозитов", "Java/Spring Boot", "Бизнес-логика депозитов, кэширование ставок")
+  Container(rateService, "Сервис ставок", "Java/Spring Boot", "Расчет персонализированных ставок")
+  ContainerDb(ibCache, "Кэш ставок", "Redis", "Кэширование справочных данных и ставок")
+  ContainerDb(ibDb, "База данных", "MS SQL Server", "Хранение заявок, сессий")
+  Container(ibQueue, "Очередь сообщений", "RabbitMQ/ActiveMQ", "Асинхронная передача заявок в АБС")
+}
+
+'------------------------
+' Система: Кол-центр
+'------------------------
+System_Boundary(ccSystem, "Система кол-центра") {
+  Container(ccWeb, "Веб-интерфейс", "Web", "Интерфейс для операторов")
+  Container(ccApi, "API", "REST API", "Обработка заявок с сайта")
+}
+
+'------------------------
+' Система: АБС
+'------------------------
+System_Boundary(absSystem, "АБС") {
+  Container(absClient, "Толстый клиент", "Desktop App", "Интерфейс для сотрудников отделений")
+  Container(absWeb, "Веб-интерфейс", "Web", "Интерфейс для бэк-офиса")
+  Container(absApi, "API", "REST API", "Интеграционный слой")
+  Container(absCore, "Ядро АБС", "Core Banking", "Бизнес-логика, обработка депозитов")
+  Container(absRateMgmt, "Управление ставками", "Module", "Управление ставками по депозитам")
+  Container(absSms, "СМС-модуль", "Module", "Отправка СМС через ядро")
+  ContainerDb(absDb, "База данных", "Oracle", "Хранение данных клиентов, депозитов, ставок")
+  Container(absQueueConsumer, "Потребитель очереди", "Service", "Получение заявок из очереди")
+}
+
+'------------------------
+' Система: СМС-шлюз
+'------------------------
+System_Boundary(smsSystem, "СМС-шлюз") {
+  Container(smsService, "СМС-сервис", "Service", "Отправка СМС")
+}
+
+'------------------------
+' Внешние системы
+'------------------------
+System_Ext(telecom, "Телеком-оператор", "Внешний оператор связи")
+
+'------------------------
+' Связи: люди ↔ системы
+'------------------------
+Rel(customer, siteWeb, "Просматривает депозиты, подает заявку", "HTTPS")
+Rel(customer, ibWeb, "Просматривает депозиты, подает заявку", "HTTPS")
+Rel(boDeposits, absWeb, "Обрабатывает заявки, управляет ставками", "HTTPS")
+Rel(ccOperator, ccWeb, "Обрабатывает заявки", "HTTPS")
+
+'------------------------
+' Связи внутри сайта
+'------------------------
+Rel(siteWeb, siteApi, "Запросы", "HTTP")
+Rel(siteApi, ccApi, "Передача заявок", "HTTPS/API")
+
+'------------------------
+' Связи внутри интернет-банка
+'------------------------
+Rel(ibWeb, ibApi, "Запросы", "HTTPS")
+Rel(ibApi, depositService, "API запросы", "HTTP")
+Rel(ibApi, rateService, "Запросы ставок", "HTTP")
+Rel(depositService, ibCache, "Чтение/запись кэша", "Redis Protocol")
+Rel(depositService, ibDb, "Чтение/запись данных", "JDBC")
+Rel(depositService, ibQueue, "Отправка заявок", "AMQP")
+Rel(rateService, ibCache, "Чтение/запись кэша", "Redis Protocol")
+Rel(rateService, absApi, "Запрос данных клиента", "REST API")
+
+'------------------------
+' Связи между системами
+'------------------------
+Rel(ibQueue, absQueueConsumer, "Асинхронная передача заявок", "AMQP")
+Rel(absQueueConsumer, absCore, "Обработка заявок", "Internal")
+Rel(absCore, absDb, "Чтение/запись данных", "JDBC")
+Rel(absCore, absRateMgmt, "Получение ставок", "Internal")
+Rel(absRateMgmt, absDb, "Управление ставками", "JDBC")
+Rel(absCore, absSms, "Отправка СМС", "Internal")
+Rel(absSms, smsService, "Запрос на отправку СМС", "API")
+Rel(smsService, telecom, "Передача СМС", "SMPP/HTTPS")
+Rel(ccApi, absApi, "Передача заявок", "REST API")
+
+@enduml
+

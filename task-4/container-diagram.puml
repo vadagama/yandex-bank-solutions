@@ -1,0 +1,91 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+'------------------------
+' Участники
+'------------------------
+Person(ccOperator, "Оператор кол-центра", "Консультирует клиентов")
+Person(partnerCCOperator, "Оператор партнёрского кол-центра", "Консультирует клиентов")
+Person(boDeposits, "Менеджер бэк-офиса", "Управляет ставками")
+
+'------------------------
+' Система: Кол-центр банка
+'------------------------
+System_Boundary(ccSystem, "Система кол-центра") {
+  Container(ccWeb, "Веб-интерфейс", "Web", "Отображение ставок для операторов")
+  Container(ccRateService, "Сервис ставок", "Java/Spring Boot", "Запрос ставок из АБС, кэширование")
+  ContainerDb(ccCache, "Кэш ставок", "Redis", "Хранение актуальных ставок с TTL 5 минут")
+  Container(ccQueueConsumer, "Потребитель очереди", "Service", "Получение уведомлений об изменении ставок")
+}
+
+'------------------------
+' Система: АБС
+'------------------------
+System_Boundary(absSystem, "АБС") {
+  Container(absWeb, "Веб-интерфейс", "Web", "Интерфейс для управления ставками")
+  Container(absRateMgmt, "Управление ставками", "Module", "Управление ставками по депозитам")
+  Container(absRateApi, "API ставок", "REST API", "Предоставление актуальных ставок")
+  Container(absExportService, "Сервис экспорта ставок", "Service", "Формирование и передача файлов")
+  Container(absNotificationService, "Сервис уведомлений", "Service", "Уведомление об изменении ставок")
+  ContainerDb(absDb, "База данных", "Oracle", "Хранение ставок по депозитам")
+  Container(absQueue, "Очередь сообщений", "RabbitMQ/ActiveMQ", "Передача уведомлений")
+}
+
+'------------------------
+' Система: SFTP-сервер
+'------------------------
+System_Boundary(sftpSystem, "SFTP-сервер банка") {
+  Container(sftpServer, "SFTP-сервер", "SFTP Server", "Прием и хранение файлов со ставками")
+  ContainerDb(sftpStorage, "Хранилище файлов", "File System", "Хранение файлов со ставками")
+}
+
+'------------------------
+' Система: Партнёрский кол-центр
+'------------------------
+System_Boundary(partnerSystem, "Партнёрский кол-центр") {
+  Container(partnerWeb, "Веб-интерфейс", "Web", "Отображение ставок для операторов")
+  Container(partnerSftpClient, "SFTP-клиент", "Service", "Загрузка файлов со ставками")
+  Container(partnerRateProcessor, "Сервис обработки ставок", "Service", "Парсинг и обработка файлов")
+  ContainerDb(partnerDb, "База данных", "Database", "Хранение ставок")
+}
+
+'------------------------
+' Связи: люди ↔ системы
+'------------------------
+Rel(ccOperator, ccWeb, "Просматривает ставки", "HTTPS")
+Rel(partnerCCOperator, partnerWeb, "Просматривает ставки", "HTTPS")
+Rel(boDeposits, absWeb, "Управляет ставками", "HTTPS")
+
+'------------------------
+' Связи внутри кол-центра
+'------------------------
+Rel(ccWeb, ccRateService, "Запрос ставок", "HTTP")
+Rel(ccRateService, ccCache, "Чтение/запись кэша", "Redis Protocol")
+Rel(ccRateService, absRateApi, "Запрос ставок", "REST API")
+Rel(ccQueueConsumer, ccCache, "Обновление кэша", "Redis Protocol")
+
+'------------------------
+' Связи внутри АБС
+'------------------------
+Rel(absWeb, absRateMgmt, "Управление ставками", "Internal")
+Rel(absRateMgmt, absDb, "Чтение/запись ставок", "JDBC")
+Rel(absRateApi, absDb, "Чтение ставок", "JDBC")
+Rel(absExportService, absDb, "Чтение ставок", "JDBC")
+Rel(absExportService, sftpServer, "Загрузка файлов", "SFTP")
+Rel(absNotificationService, absDb, "Отслеживание изменений", "JDBC")
+Rel(absNotificationService, absQueue, "Отправка уведомлений", "AMQP")
+Rel(absQueue, ccQueueConsumer, "Передача уведомлений", "AMQP")
+
+'------------------------
+' Связи между системами
+'------------------------
+Rel(sftpServer, sftpStorage, "Хранение файлов", "File System")
+Rel(partnerSftpClient, sftpServer, "Загрузка файлов", "SFTP")
+Rel(partnerSftpClient, partnerRateProcessor, "Передача файлов", "Internal")
+Rel(partnerRateProcessor, partnerDb, "Сохранение ставок", "JDBC")
+Rel(partnerWeb, partnerDb, "Чтение ставок", "JDBC")
+
+@enduml
+

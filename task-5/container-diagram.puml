@@ -1,0 +1,147 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+'------------------------
+' Участники
+'------------------------
+Person(customer, "Клиент банка", "Физическое лицо")
+Person(boLoans, "Менеджер бэк-офиса", "Обрабатывает заявки на кредиты")
+Person(branchEmp, "Сотрудник отделения", "Оформляет кредиты в отделении")
+
+'------------------------
+' Система: Сайт банка
+'------------------------
+System_Boundary(siteSystem, "Сайт банка") {
+  Container(siteWeb, "Веб-приложение", "React/Angular", "Отображение кредитов, форма заявки")
+  Container(siteApi, "API Gateway", "Nginx/API Gateway", "Маршрутизация запросов, SSL/TLS")
+}
+
+'------------------------
+' Система: Интернет-банк
+'------------------------
+System_Boundary(ibSystem, "Интернет-банк") {
+  Container(ibWeb, "Веб-приложение", "React/Angular", "Отображение кредитов, предодобренные предложения, форма заявки")
+  Container(ibApi, "API Gateway", "Nginx/API Gateway", "Маршрутизация, SSL/TLS, аутентификация")
+  Container(loanService, "Сервис кредитов", "Java/Spring Boot", "Бизнес-логика кредитов, кэширование")
+  ContainerDb(ibCache, "Кэш данных", "Redis", "Кэширование справочных данных, предодобрений")
+  ContainerDb(ibDb, "База данных", "MS SQL Server", "Хранение заявок, сессий")
+  Container(ibQueue, "Очередь сообщений", "RabbitMQ/ActiveMQ", "Асинхронная передача заявок")
+}
+
+'------------------------
+' Система: Кредитный конвейер
+'------------------------
+System_Boundary(loanPipelineSystem, "Кредитный конвейер") {
+  Container(loanApi, "API", "REST API", "Прием заявок, предоставление предодобрений")
+  Container(loanProcessingService, "Сервис обработки заявок", "Java/Spring Boot", "Обработка заявок, управление жизненным циклом")
+  Container(loanPreapprovalService, "Сервис предодобрений", "Java/Spring Boot", "Управление предодобренными предложениями")
+  Container(loanSyncService, "Сервис синхронизации с АБС", "Java/Spring Boot", "Батч и оперативная синхронизация")
+  ContainerDb(loanDb, "База данных", "MS SQL Server/Oracle", "Хранение заявок, предодобрений, статусов")
+  Container(loanQueue, "Очередь сообщений", "RabbitMQ/ActiveMQ", "Асинхронная передача заявок и синхронизация")
+}
+
+'------------------------
+' Система: Система кредитного скоринга
+'------------------------
+System_Boundary(scoringSystem, "Система кредитного скоринга") {
+  Container(scoringApi, "API скоринга", "REST API", "Выполнение скоринга заявок")
+  Container(scoringService, "Сервис скоринга", "Java/Spring Boot", "Расчет кредитного скоринга")
+  ContainerDb(scoringCache, "Кэш результатов скоринга", "Redis", "Кэширование результатов скоринга")
+  ContainerDb(scoringDb, "База данных", "Database", "Хранение результатов скоринга, моделей")
+}
+
+'------------------------
+' Система: АБС
+'------------------------
+System_Boundary(absSystem, "АБС") {
+  Container(absClient, "Толстый клиент", "Desktop App", "Интерфейс для сотрудников отделений")
+  Container(absWeb, "Веб-интерфейс", "Web", "Интерфейс для бэк-офиса")
+  Container(absApi, "API", "REST API", "Интеграционный слой")
+  Container(absCore, "Ядро АБС", "Core Banking", "Бизнес-логика, обработка кредитов")
+  Container(absSyncService, "Сервис синхронизации", "Service", "Синхронизация с Кредитным конвейером")
+  ContainerDb(absDb, "База данных", "Oracle", "Хранение данных клиентов, кредитов, заявок")
+  Container(absQueue, "Очередь сообщений", "RabbitMQ/ActiveMQ", "Асинхронная синхронизация")
+}
+
+'------------------------
+' Система: СМС-шлюз
+'------------------------
+System_Boundary(smsSystem, "СМС-шлюз") {
+  Container(smsService, "СМС-сервис", "Service", "Отправка СМС")
+}
+
+'------------------------
+' Внешние системы
+'------------------------
+System_Ext(bki, "Бюро кредитных историй", "Внешнее БКИ")
+System_Ext(telecom, "Телеком-оператор", "Внешний оператор связи")
+
+'------------------------
+' Связи: люди ↔ системы
+'------------------------
+Rel(customer, siteWeb, "Просматривает кредиты, подает заявку", "HTTPS")
+Rel(customer, ibWeb, "Просматривает кредиты, подает заявку", "HTTPS")
+Rel(boLoans, loanProcessingService, "Обрабатывает заявки", "HTTPS")
+Rel(branchEmp, absClient, "Оформляет кредит", "Desktop App")
+
+'------------------------
+' Связи внутри сайта
+'------------------------
+Rel(siteWeb, siteApi, "Запросы", "HTTP")
+Rel(siteApi, scoringApi, "Передача данных для скоринга", "HTTPS/API")
+Rel(siteApi, loanApi, "Сохранение заявки", "HTTPS/API")
+
+'------------------------
+' Связи внутри интернет-банка
+'------------------------
+Rel(ibWeb, ibApi, "Запросы", "HTTPS")
+Rel(ibApi, loanService, "API запросы", "HTTP")
+Rel(loanService, ibCache, "Чтение/запись кэша", "Redis Protocol")
+Rel(loanService, ibDb, "Чтение/запись данных", "JDBC")
+Rel(loanService, ibQueue, "Отправка заявок", "AMQP")
+Rel(loanService, loanApi, "Запрос предодобрений", "REST API")
+
+'------------------------
+' Связи внутри Кредитного конвейера
+'------------------------
+Rel(loanApi, loanProcessingService, "Передача заявок", "Internal")
+Rel(loanApi, loanPreapprovalService, "Запрос предодобрений", "Internal")
+Rel(loanProcessingService, loanDb, "Чтение/запись заявок", "JDBC")
+Rel(loanProcessingService, loanPreapprovalService, "Проверка предодобрений", "Internal")
+Rel(loanProcessingService, scoringApi, "Запрос скоринга", "REST API")
+Rel(loanProcessingService, loanSyncService, "Синхронизация с АБС", "Internal")
+Rel(loanPreapprovalService, loanDb, "Чтение/запись предодобрений", "JDBC")
+Rel(loanSyncService, loanDb, "Чтение заявок", "JDBC")
+Rel(loanSyncService, loanQueue, "Отправка в очередь", "AMQP")
+Rel(ibQueue, loanProcessingService, "Получение заявок", "AMQP")
+
+'------------------------
+' Связи внутри системы скоринга
+'------------------------
+Rel(scoringApi, scoringService, "Обработка запросов", "Internal")
+Rel(scoringService, scoringCache, "Чтение/запись кэша", "Redis Protocol")
+Rel(scoringService, scoringDb, "Чтение/запись данных", "JDBC")
+Rel(scoringService, bki, "Запрос кредитных историй", "API")
+
+'------------------------
+' Связи внутри АБС
+'------------------------
+Rel(absClient, absCore, "Обработка операций", "Internal")
+Rel(absWeb, absCore, "Обработка операций", "Internal")
+Rel(absCore, absDb, "Чтение/запись данных", "JDBC")
+Rel(absSyncService, absDb, "Чтение/запись заявок", "JDBC")
+Rel(absSyncService, absQueue, "Отправка в очередь", "AMQP")
+Rel(absQueue, loanSyncService, "Получение обновлений", "AMQP")
+Rel(loanQueue, absSyncService, "Получение обновлений", "AMQP")
+
+'------------------------
+' Связи между системами
+'------------------------
+Rel(loanProcessingService, smsService, "Отправка СМС", "API")
+Rel(smsService, telecom, "Передача СМС", "SMPP/HTTPS")
+Rel(absSyncService, loanApi, "Батч-синхронизация", "REST API")
+
+@enduml
+
